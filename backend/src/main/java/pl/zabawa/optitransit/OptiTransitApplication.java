@@ -9,5 +9,5 @@ public class OptiTransitApplication {
     public static void main(String[] args) {
         SpringApplication.run(OptiTransitApplication.class, args);
     }
-
+    
 }
