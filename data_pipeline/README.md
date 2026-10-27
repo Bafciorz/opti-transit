@@ -15,18 +15,23 @@ data_pipeline/
 ├── .gitignore            # Ignorowane pliki (.env, .venv, *.parquet, *.tmp)
 ├── DATA_TASKS.md         # Plan realizacji i szczegółowy status tasków
 ├── README.md             # Dokumentacja modułu
-├── pyproject.toml        # Zależności projektu uv (psycopg, httpx, rich, protobuf itp.)
+├── pyproject.toml        # Zależności projektu uv (psycopg, httpx, aiohttp, rich, protobuf itp.)
 ├── uv.lock               # Blokada wersji zależności uv
-├── db.py                 # Moduł połączeń z bazą PostgreSQL (pula połączeń sync/async, kursory, config)
+├── db.py                 # Moduł połączeń z bazą PostgreSQL (pula połączeń sync/async, kursory, config, run_async)
+├── collector.py          # Główna pętla asynchroniczna collectora pozycji pojazdów na żywo (co 15s)
 ├── sql/
 │   └── schema.sql        # Schemat bazy (tabele GTFS static + GTFS realtime + indeksy)
 ├── downloaders/
-│   └── gtfs_static.py    # Downloader warsaw.zip do folderu data/ z detekcją nowych wersji
+│   ├── gtfs_static.py    # Downloader warsaw.zip do folderu data/ z detekcją nowych wersji
+│   └── gtfs_realtime.py  # Asynchroniczny downloader vehicles.pb z deduplikacją timestampów
 ├── loaders/
 │   └── gtfs_static.py    # Bulk-loader GTFS do PostgreSQL w trybie Zero-Downtime (Blue-Green Swap)
+├── writers/
+│   └── vehicle_positions.py # Błyskawiczny writer pozycji do tabeli vehicle_positions przez COPY protocol (< 35ms)
 └── scripts/
     ├── init_db.py        # Skrypt tworzenia bazy danych i aplikowania schematu tabel
-    └── verify_gtfs.py    # Skrypt diagnostyczny (weryfikacja rekordów, kodowanie UTF-8, routing JOIN)
+    ├── verify_gtfs.py    # Skrypt diagnostyczny danych statycznych (rekordy, kodowanie UTF-8, routing JOIN)
+    └── verify_realtime.py # Skrypt diagnostyczny pozycji realtime (granice Warszawy, top linie, rozmiar bazy)
 ```
 
 ---
@@ -47,6 +52,9 @@ DB_PASSWORD=twoje_haslo
 GTFS_STATIC_URL=https://mkuran.pl/gtfs/warsaw.zip
 GTFS_REALTIME_VEHICLES_URL=https://mkuran.pl/gtfs/warsaw/vehicles.pb
 
+# Interwał collectora realtime (w sekundach)
+COLLECTOR_INTERVAL_SECONDS=15
+
 # Archiwizacja
 ARCHIVE_RETENTION_HOURS=24
 PARQUET_OUTPUT_DIR=data_pipeline/archive
@@ -56,7 +64,7 @@ PARQUET_OUTPUT_DIR=data_pipeline/archive
 
 ## 🚀 Narzędzia i polecenia
 
-Wszystkie polecenia można uruchamiać będąc w folderze `data_pipeline/` za pomocą `uv run`:
+Wszystkie polecenia uruchamia się będąc w folderze `data_pipeline/` za pomocą `uv run`:
 
 ### 1. Inicjalizacja bazy danych (`scripts/init_db.py`)
 Automatycznie sprawdza, czy baza `opti_transit` istnieje (tworzy ją w razie potrzeby), po czym aplikuje definicje tabel i indeksów z `sql/schema.sql`:
@@ -74,7 +82,7 @@ uv run python scripts/init_db.py --drop-all
 
 ---
 
-### 2. Pobieranie rozkładów jazdy GTFS (`downloaders/gtfs_static.py`)
+### 2. Pobieranie rozkładów jazdy GTFS Static (`downloaders/gtfs_static.py`)
 Pobiera plik `warsaw.zip` (106 MB) bezpośrednio do głównego katalogu `data/`:
 - **Detekcja wersji:** Przed pobraniem sprawdza nagłówki HTTP (`Content-Length`, `ETag`, `Last-Modified`) oraz odczytuje `feed_info.txt` z pliku lokalnego i tabeli `feed_metadata`.
 - **Oszczędność transferu:** Jeśli wersja w bazie jest aktualna, pomija pobieranie w ułamku sekundy.
@@ -114,10 +122,10 @@ uv run python loaders/gtfs_static.py --force
 
 ---
 
-### 4. Weryfikacja załadowanych danych (`scripts/verify_gtfs.py`)
+### 4. Weryfikacja danych statycznych (`scripts/verify_gtfs.py`)
 Weryfikuje stan bazy po migracji, sprawdzając:
 1. Aktualne metadane feedu z `feed_metadata` (wersja, wydawca, timestamp).
-2. Liczbę wierszy we wszystkich 7 tabelach GTFS.
+2. Liczbę wierszy we wszystkich 7 tabelach GTFS (~9.86 mln).
 3. Poprawność kodowania polskich znaków diakrytycznych UTF-8 (np. *Świętokrzyska*, *Al. Jana Pawła II*).
 4. Relacje między tabelami (przykładowy testowy JOIN `trips` + `routes` + `stop_times` + `stops` dla metra M1).
 
@@ -127,9 +135,44 @@ uv run python scripts/verify_gtfs.py
 
 ---
 
+### 5. Zbieranie pozycji pojazdów na żywo (`collector.py`)
+Główna pętla asynchroniczna (`asyncio` + `aiohttp`), która cyklicznie co 15 sekund pobiera pozycje ~1900 aktywnych pojazdów (autobusy, tramwaje, metro M1/M2, SKM) z `vehicles.pb` i zapisuje je do PostgreSQL.
+
+- **Wydajność:** Wykorzystuje protokół PostgreSQL `COPY` ([`writers/vehicle_positions.py`](writers/vehicle_positions.py)) — zapis ~2000 pojazdów trwa zaledwie **~30 ms**.
+- **Deduplikacja:** Sprawdza `feed.header.timestamp` — jeśli feed na serwerze nie zmienił się od poprzedniej iteracji, pomija duplikat i nie obciąża bazy.
+- **Odporność na błędy:** Automatyczne wznawianie połączenia z bazą danych w razie chwilowych przerw sieciowych.
+- **Graceful Shutdown:** Bezpieczne zamykanie połączeń po naciśnięciu `Ctrl+C` (SIGINT/SIGTERM) z wyświetleniem tabeli podsumowującej.
+
+```bash
+# Uruchomienie ciągłego zbierania co 15 sekund:
+uv run python collector.py
+
+# Uruchomienie z własnym interwałem (np. co 10 sekund):
+uv run python collector.py --interval 10
+
+# Uruchomienie testowe na określoną liczbę iteracji (np. 3 iteracje):
+uv run python collector.py --max-iterations 3
+```
+
+---
+
+### 6. Weryfikacja danych realtime (`scripts/verify_realtime.py`)
+Sprawdza stan tabeli `vehicle_positions`:
+- Liczba zapisanych pozycji, unikalnych pojazdów i obsługiwanych linii.
+- Walidacja granic geograficznych (sprawdzenie czy lat/lon mieszczą się w aglomeracji warszawskiej: Lat ~52, Lon ~21).
+- Podgląd ostatnich zarejestrowanych pojazdów (linia, numer boczny, prędkość, kąt jazdy, timestamp GPS).
+- Zestawienie Top 10 linii o największej liczbie pozycji.
+- Aktualny rozmiar tabeli i indeksów w PostgreSQL oraz szacunek dobowego przyrostu danych.
+
+```bash
+uv run python scripts/verify_realtime.py
+```
+
+---
+
 ## 📊 Tabele i wolumen danych w PostgreSQL
 
-Po załadowaniu feedu GTFS Static w bazie znajduje się **9,862,400 wierszy**:
+Po załadowaniu feedu GTFS Static oraz uruchomieniu collectora w bazie znajdują się:
 
 | Tabela PostgreSQL | Plik źródłowy | Liczba wierszy | Opis |
 |---|---|---:|---|
@@ -141,18 +184,17 @@ Po załadowaniu feedu GTFS Static w bazie znajduje się **9,862,400 wierszy**:
 | `gtfs_calendar_dates` | `calendar_dates.txt` | 93 | Kalendarz kursowania i wyjątki (święta, dni robocze) |
 | `gtfs_shapes` | `shapes.txt` | 1,331,657 | Punkty geometrii GPS do rysowania dokładnego przebiegu tras |
 | `feed_metadata` | *generowane* | 1 | Wersja feedu, czas załadowania i statystyki |
-| `vehicle_positions` | `vehicles.pb` | *Faza 3* | Szereg czasowy pozycji pojazdów na żywo |
-
-Średnia prędkość ładowania: **~65 000 wierszy/sekundę**.
+| `vehicle_positions` | `vehicles.pb` | ~10.9M / dobę | Szereg czasowy pozycji pojazdów na żywo (~1900 na tick co 15s) |
 
 ---
 
 ## 💡 Uruchamianie z głównego folderu projektu
 
-Jeśli znajdujesz się w głównym katalogu `opti-transit/`, możesz uruchomić dowolny skrypt dodając flagę `--project data_pipeline`:
+Jeśli znajdujesz się w głównym katalogu `opti-transit/`, możesz uruchomić dowolne polecenie dodając flagę `--project data_pipeline`:
 
 ```bash
+uv run --project data_pipeline python data_pipeline/collector.py
+uv run --project data_pipeline python data_pipeline/scripts/verify_realtime.py
 uv run --project data_pipeline python data_pipeline/scripts/verify_gtfs.py
-uv run --project data_pipeline python data_pipeline/downloaders/gtfs_static.py
 uv run --project data_pipeline python data_pipeline/loaders/gtfs_static.py
 ```

@@ -7,6 +7,7 @@ Configuration is loaded from environment variables or a local `.env` file.
 from __future__ import annotations
 
 import os
+import sys
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -203,3 +204,11 @@ def test_connection(dbname: str | None = None) -> tuple[bool, str]:
                 return True, version
     except Exception as exc:
         return False, str(exc)
+
+
+def run_async(coro: Any) -> Any:
+    """Executes a coroutine with a compatible event loop on both Windows and Linux."""
+    import asyncio
+    if sys.platform == "win32":
+        return asyncio.run(coro, loop_factory=asyncio.SelectorEventLoop)
+    return asyncio.run(coro)
