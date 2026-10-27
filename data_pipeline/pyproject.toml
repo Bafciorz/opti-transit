@@ -8,6 +8,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "gtfs-realtime-bindings>=3.0.0",
+    "httpx>=0.28.1",
     "protobuf>=7.36.2",
     "psycopg-pool>=3.3.3",
     "psycopg[binary]>=3.3.6",
