@@ -20,5 +20,14 @@ dependencies = [
     "rich>=15.0.0",
 ]
 
-[tool.uv]
-package = false
+[project.scripts]
+data-pipeline = "cli:main"
+collector = "collector:main"
+runner = "runner:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

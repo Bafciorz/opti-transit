@@ -27,7 +27,6 @@ if hasattr(sys.stderr, "reconfigure"):
 
 # Ensure data_pipeline root is on sys.path
 _DATA_PIPELINE_ROOT = Path(__file__).resolve().parent.parent
-_REPO_ROOT = _DATA_PIPELINE_ROOT.parent
 if str(_DATA_PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(_DATA_PIPELINE_ROOT))
 
@@ -40,7 +39,7 @@ from db import close_sync_pool, get_connection
 
 console = Console()
 
-DEFAULT_ZIP_PATH = _REPO_ROOT / "data" / "warsaw.zip"
+DEFAULT_ZIP_PATH = _DATA_PIPELINE_ROOT / "data" / "warsaw.zip"
 
 # Chunk buffer size for streaming COPY (1 MB)
 COPY_BUFFER_SIZE = 1024 * 1024

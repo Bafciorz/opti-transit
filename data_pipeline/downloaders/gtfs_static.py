@@ -23,7 +23,6 @@ if hasattr(sys.stderr, "reconfigure"):
 
 # Ensure data_pipeline root is on sys.path
 _DATA_PIPELINE_ROOT = Path(__file__).resolve().parent.parent
-_REPO_ROOT = _DATA_PIPELINE_ROOT.parent
 if str(_DATA_PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(_DATA_PIPELINE_ROOT))
 
@@ -44,7 +43,7 @@ from db import get_connection
 console = Console()
 
 DEFAULT_URL = os.getenv("GTFS_STATIC_URL", "https://mkuran.pl/gtfs/warsaw.zip")
-DEFAULT_DEST_PATH = _REPO_ROOT / "data" / "warsaw.zip"
+DEFAULT_DEST_PATH = _DATA_PIPELINE_ROOT / "data" / "warsaw.zip"
 
 
 def get_latest_db_feed_version() -> str | None:
@@ -89,7 +88,7 @@ def download_gtfs_zip(
 
     Args:
         url: Direct HTTP URL to the GTFS zip archive.
-        dest_path: Target path to save the archive (defaults to opti-transit/data/warsaw.zip).
+        dest_path: Target path to save the archive (defaults to data_pipeline/data/warsaw.zip).
         force: If True, forces download even if local file or DB has matching version.
 
     Returns:
@@ -184,6 +183,10 @@ def download_gtfs_zip(
 
     is_new = (new_version != db_version)
     return dest_path, new_feed_info, is_new
+
+
+# Backwards compatibility alias
+download_gtfs_static = download_gtfs_zip
 
 
 def main() -> None:

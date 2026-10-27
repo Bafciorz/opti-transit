@@ -14,11 +14,15 @@ data_pipeline/
 ├── .env.example          # Wzorzec konfiguracji środowiskowej
 ├── .gitignore            # Ignorowane pliki (.env, .venv, *.parquet, *.tmp)
 ├── DATA_TASKS.md         # Plan realizacji i szczegółowy status tasków
+├── DB_TABLES.md          # Kompletna dokumentacja tabel, kolumn, typów i specyfiki danych ZTM/WTP
 ├── README.md             # Dokumentacja modułu
 ├── pyproject.toml        # Zależności projektu uv (psycopg, httpx, aiohttp, rich, protobuf itp.)
 ├── uv.lock               # Blokada wersji zależności uv
 ├── db.py                 # Moduł połączeń z bazą PostgreSQL (pula połączeń sync/async, kursory, config, run_async)
-├── collector.py          # Główna pętla asynchroniczna collectora pozycji pojazdów na żywo (co 15s)
+├── runner.py             # Główny proces orchestratora: współbieżny collector, static sync, archiver, monitor
+├── cli.py                # Narzędzie CLI (uv run data-pipeline: inspect, run, collect, load-gtfs, archive, query, verify)
+├── logging_config.py     # Moduł logowania (konsola + rotowany logs/pipeline.log) i metryk PipelineMonitor
+├── collector.py          # Pętla asynchroniczna collectora pozycji pojazdów na żywo (co 15s)
 ├── archiver.py           # Archiwizator PostgreSQL -> Parquet ZSTD z bezpiecznym DELETE oraz silnik DuckDB Reader
 ├── sql/
 │   └── schema.sql        # Schemat bazy (tabele GTFS static + GTFS realtime + indeksy)
@@ -29,6 +33,8 @@ data_pipeline/
 │   └── gtfs_static.py    # Bulk-loader GTFS do PostgreSQL w trybie Zero-Downtime (Blue-Green Swap)
 ├── writers/
 │   └── vehicle_positions.py # Błyskawiczny writer pozycji do tabeli vehicle_positions przez COPY protocol (< 35ms)
+├── data/                 # Katalog danych: warsaw.zip, archive/ (*.parquet) - ignorowane przez Git
+├── logs/                 # Rotowane pliki logów (pipeline.log) - ignorowane przez Git
 └── scripts/
     ├── init_db.py        # Skrypt tworzenia bazy danych i aplikowania schematu tabel
     ├── verify_gtfs.py    # Skrypt diagnostyczny danych statycznych (rekordy, kodowanie UTF-8, routing JOIN)
@@ -59,7 +65,7 @@ COLLECTOR_INTERVAL_SECONDS=15
 
 # Archiwizacja
 ARCHIVE_RETENTION_HOURS=24
-PARQUET_OUTPUT_DIR=data_pipeline/archive
+PARQUET_OUTPUT_DIR=data_pipeline/data/archive
 ```
 
 ---
@@ -85,7 +91,7 @@ uv run python scripts/init_db.py --drop-all
 ---
 
 ### 2. Pobieranie rozkładów jazdy GTFS Static (`downloaders/gtfs_static.py`)
-Pobiera plik `warsaw.zip` (106 MB) bezpośrednio do głównego katalogu `data/`:
+Pobiera plik `warsaw.zip` (106 MB) bezpośrednio do katalogu `data_pipeline/data/`:
 - **Detekcja wersji:** Przed pobraniem sprawdza nagłówki HTTP (`Content-Length`, `ETag`, `Last-Modified`) oraz odczytuje `feed_info.txt` z pliku lokalnego i tabeli `feed_metadata`.
 - **Oszczędność transferu:** Jeśli wersja w bazie jest aktualna, pomija pobieranie w ułamku sekundy.
 - **Bezpieczeństwo:** Pobiera do pliku tymczasowego `.zip.tmp` i podmienia plik docelowy atomowo, co zapobiega uszkodzeniu archiwum przy przerwaniu transferu.
@@ -245,6 +251,73 @@ uv run python scripts/verify_archive.py
 
 ---
 
+### 10. Główny proces — Unified Runner (`runner.py` / `uv run runner`)
+Orchestrator łączący wszystkie zadania w pojedynczym procesie asynchronicznym (`asyncio`):
+
+- **Realtime Vehicle Collector:** Cykliczne odpytywanie `vehicles.pb` co 15s i zapis do PostgreSQL.
+- **Static GTFS Sync:** Sprawdzanie dostępności nowego rozkładu jazdy codziennie (domyślnie o **03:00** czasu warszawskiego) w osobnym wątku (`asyncio.to_thread`) i bezprzerwowa podmiana (Zero-Downtime Blue-Green Swap).
+- **Parquet Archiver:** Automatyczna archiwizacja danych starszych niż 24h codziennie (domyślnie o **04:00**) do skompresowanych plików Parquet (ZSTD) i czyszczenie PostgreSQL.
+- **Health & Metrics Monitor:** Cykliczne raportowanie stanu bazy, zebranych pozycji i uptime'u co 5 minut.
+- **Graceful Shutdown:** Bezpieczne zatrzymanie pętli po naciśnięciu `Ctrl+C` z wyświetleniem tabeli podsumowującej sesję.
+
+```bash
+# Uruchomienie pełnego pipeline'u:
+uv run runner
+# lub:
+uv run python runner.py
+
+# Konfiguracja interwałów i godzin:
+uv run runner --collector-interval 15 --static-sync-hour 3 --archive-hour 4
+
+# Uruchomienie testowe (pojedyncza iteracja collectora):
+uv run runner --run-once
+```
+
+---
+
+### 11. Logowanie i monitoring (`logging_config.py`)
+Jednolity system logowania dla wszystkich komponentów pipeline'u:
+
+- **Format:** `[TIMESTAMP] [MODULE] [LEVEL] Message` (np. `[2026-10-27 21:53:09] [opti_transit] [INFO] Inserted 1020 vehicle positions in 198.8 ms`).
+- **Wyjście podwójne:** Kolorowy output na konsolę oraz rotowany plik `logs/pipeline.log` (10 MB, do 5 plików archiwalnych, kodowanie UTF-8).
+- **Klasa `PipelineMonitor`:** Zbiera metryki w czasie rzeczywistym i cyklicznie raportuje m.in. uptime, liczbę wierszy, błędy, wielkość tabeli `vehicle_positions` i całkowity rozmiar bazy PostgreSQL.
+
+---
+
+### 12. Uniwersalne narzędzie CLI (`cli.py` / `uv run data-pipeline`)
+Pojedynczy interfejs wiersza poleceń integrujący wszystkie operacje:
+
+```bash
+# Pomoc i spis dostępnych komend:
+uv run data-pipeline --help
+
+# Szybki podgląd stanu systemu, połączenia z bazą i rozmiaru tabel:
+uv run data-pipeline inspect
+
+# Szczegółowe statystyki bazy i archiwum Parquet:
+uv run data-pipeline stats
+
+# Uruchomienie pełnego orchestratora (runner):
+uv run data-pipeline run
+
+# Uruchomienie tylko collectora realtime:
+uv run data-pipeline collect --interval 15
+
+# Załadowanie rozkładów GTFS Static:
+uv run data-pipeline load-gtfs
+
+# Archiwizacja starych danych do Parquet:
+uv run data-pipeline archive --older-than-hours 24
+
+# Szybkie zapytanie DuckDB do archiwum Parquet:
+uv run data-pipeline query --route-id 503 --limit 10
+
+# Uruchomienie zestawu testów diagnostycznych:
+uv run data-pipeline verify --suite all
+```
+
+---
+
 ## 📊 Tabele i wolumen danych w PostgreSQL
 
 Po załadowaniu feedu GTFS Static oraz uruchomieniu collectora w bazie znajdują się:
@@ -268,10 +341,12 @@ Po załadowaniu feedu GTFS Static oraz uruchomieniu collectora w bazie znajdują
 Jeśli znajdujesz się w głównym katalogu `opti-transit/`, możesz uruchomić dowolne polecenie dodając flagę `--project data_pipeline`:
 
 ```bash
-uv run --project data_pipeline python data_pipeline/collector.py
-uv run --project data_pipeline python data_pipeline/archiver.py archive
-uv run --project data_pipeline python data_pipeline/scripts/verify_archive.py
-uv run --project data_pipeline python data_pipeline/scripts/verify_realtime.py
-uv run --project data_pipeline python data_pipeline/scripts/verify_gtfs.py
-uv run --project data_pipeline python data_pipeline/loaders/gtfs_static.py
+# Pełny pipeline w jednym poleceniu:
+uv run --project data_pipeline runner
+
+# Narzędzie CLI:
+uv run --project data_pipeline data-pipeline inspect
+uv run --project data_pipeline data-pipeline stats
+uv run --project data_pipeline data-pipeline query --route-id 503 --limit 5
+uv run --project data_pipeline data-pipeline verify --suite all
 ```

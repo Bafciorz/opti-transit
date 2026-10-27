@@ -5,3 +5,7 @@ __pycache__/
 .env
 *.parquet
 downloads/
+logs/
+data/
+*.zip
+*.tmp
