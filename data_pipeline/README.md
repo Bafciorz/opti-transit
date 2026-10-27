@@ -35,11 +35,20 @@ data_pipeline/
 │   └── vehicle_positions.py # Błyskawiczny writer pozycji do tabeli vehicle_positions przez COPY protocol (< 35ms)
 ├── data/                 # Katalog danych: warsaw.zip, archive/ (*.parquet) - ignorowane przez Git
 ├── logs/                 # Rotowane pliki logów (pipeline.log) - ignorowane przez Git
-└── scripts/
-    ├── init_db.py        # Skrypt tworzenia bazy danych i aplikowania schematu tabel
-    ├── verify_gtfs.py    # Skrypt diagnostyczny danych statycznych (rekordy, kodowanie UTF-8, routing JOIN)
-    ├── verify_realtime.py # Skrypt diagnostyczny pozycji realtime (granice Warszawy, top linie, rozmiar bazy)
-    └── verify_archive.py # Skrypt testowy i diagnostyczny archiwizacji Parquet (ZSTD, DuckDB, bezpieczny DELETE)
+├── scripts/
+│   └── init_db.py        # Skrypt tworzenia bazy danych i aplikowania schematu tabel
+└── tests/
+    ├── conftest.py       # Fixtury pytest (połączenia PG, event loop Windows, mocki ZIP i protobuf)
+    ├── test_db.py        # Testy modułu połączeń PostgreSQL (sync/async pula, kursory, config)
+    ├── test_realtime.py  # Testy GTFS-RT downloadera, parsowania Protobuf, deduplikacji i linii
+    ├── test_writer.py    # Testy zapisu PostgreSQL COPY protocol (sync i async)
+    ├── test_static_gtfs.py # Testy downloadera/loadera GTFS static, metadanych i konfiguracji tabel
+    ├── test_archiver.py  # Testy archiwizacji Parquet ZSTD, bezpiecznego DELETE i DuckDB
+    ├── test_logging_monitor.py # Testy konfiguracji logowania i metryk PipelineMonitor
+    ├── test_runner_cli.py # Testy PipelineRunner, VehicleCollector i parsera CLI
+    ├── verify_gtfs.py    # Skrypt diagnostyczny danych statycznych (rekordy, UTF-8, routing JOIN)
+    ├── verify_realtime.py # Skrypt diagnostyczny pozycji realtime (granice, top linie, rozmiar)
+    └── verify_archive.py # Skrypt weryfikacji archiwizacji Parquet (ZSTD, DuckDB, bezpieczny DELETE)
 ```
 
 ---
@@ -312,8 +321,13 @@ uv run data-pipeline archive --older-than-hours 24
 # Szybkie zapytanie DuckDB do archiwum Parquet:
 uv run data-pipeline query --route-id 503 --limit 10
 
-# Uruchomienie zestawu testów diagnostycznych:
+# Uruchomienie skryptów diagnostycznych (wszystkie lub gtfs, realtime, archive):
 uv run data-pipeline verify --suite all
+
+# Uruchomienie pełnego zestawu testów jednostkowych i integracyjnych pytest:
+uv run pytest
+# lub przez CLI:
+uv run data-pipeline verify --suite unit
 ```
 
 ---

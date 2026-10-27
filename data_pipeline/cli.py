@@ -272,11 +272,11 @@ def cmd_verify(args: argparse.Namespace) -> None:
     scripts_to_run = []
 
     if args.suite == "all" or args.suite == "gtfs":
-        scripts_to_run.append("scripts/verify_gtfs.py")
+        scripts_to_run.append("tests/verify_gtfs.py")
     if args.suite == "all" or args.suite == "realtime":
-        scripts_to_run.append("scripts/verify_realtime.py")
+        scripts_to_run.append("tests/verify_realtime.py")
     if args.suite == "all" or args.suite == "archive":
-        scripts_to_run.append("scripts/verify_archive.py")
+        scripts_to_run.append("tests/verify_archive.py")
 
     for script in scripts_to_run:
         script_path = _DATA_PIPELINE_ROOT / script
@@ -284,6 +284,13 @@ def cmd_verify(args: argparse.Namespace) -> None:
         res = subprocess.run([sys.executable, str(script_path)])
         if res.returncode != 0:
             console.print(f"[bold red]FAILED: {script} exited with code {res.returncode}[/bold red]")
+            sys.exit(res.returncode)
+
+    if args.suite in ("unit", "pytest"):
+        console.print(f"\n[bold cyan]=== Running Pytest Suite ===[/bold cyan]")
+        res = subprocess.run([sys.executable, "-m", "pytest", "tests/"])
+        if res.returncode != 0:
+            console.print(f"[bold red]FAILED: pytest exited with code {res.returncode}[/bold red]")
             sys.exit(res.returncode)
 
     console.print(f"\n[bold green]All selected verification scripts passed successfully! [OK][/bold green]")
@@ -303,8 +310,8 @@ def cmd_init_db(args: argparse.Namespace) -> None:
         sys.exit(res.returncode)
 
 
-def main() -> None:
-    """Main CLI entrypoint."""
+def build_parser() -> argparse.ArgumentParser:
+    """Builds and returns the argument parser for data-pipeline CLI."""
     parser = argparse.ArgumentParser(
         prog="data-pipeline",
         description="Opti-Transit Data Pipeline Management CLI",
@@ -367,9 +374,9 @@ def main() -> None:
     p_verify = subparsers.add_parser("verify", help="Run automated verification checks")
     p_verify.add_argument(
         "--suite",
-        choices=["all", "gtfs", "realtime", "archive"],
+        choices=["all", "gtfs", "realtime", "archive", "unit", "pytest"],
         default="all",
-        help="Verification suite to run (default: all)",
+        help="Verification suite to run (default: all; use 'unit' for pytest)",
     )
 
     # Command: init-db
@@ -377,6 +384,12 @@ def main() -> None:
     p_init.add_argument("--check-only", action="store_true", help="Only verify existing tables and indexes")
     p_init.add_argument("--drop-all", action="store_true", help="Drop all tables and recreate from schema.sql")
 
+    return parser
+
+
+def main() -> None:
+    """Main CLI entrypoint."""
+    parser = build_parser()
     args = parser.parse_args()
 
     if args.command is None:
