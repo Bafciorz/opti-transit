@@ -8,11 +8,14 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "aiohttp>=3.14.5",
+    "duckdb>=2.0.0",
     "gtfs-realtime-bindings>=3.0.0",
     "httpx>=0.28.1",
+    "pandas>=3.1.0",
     "protobuf>=7.36.2",
     "psycopg-pool>=3.3.3",
     "psycopg[binary]>=3.3.6",
+    "pyarrow>=26.0.0",
     "python-dotenv>=1.2.4",
     "rich>=15.0.0",
 ]

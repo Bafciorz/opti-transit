@@ -19,6 +19,7 @@ data_pipeline/
 ├── uv.lock               # Blokada wersji zależności uv
 ├── db.py                 # Moduł połączeń z bazą PostgreSQL (pula połączeń sync/async, kursory, config, run_async)
 ├── collector.py          # Główna pętla asynchroniczna collectora pozycji pojazdów na żywo (co 15s)
+├── archiver.py           # Archiwizator PostgreSQL -> Parquet ZSTD z bezpiecznym DELETE oraz silnik DuckDB Reader
 ├── sql/
 │   └── schema.sql        # Schemat bazy (tabele GTFS static + GTFS realtime + indeksy)
 ├── downloaders/
@@ -31,7 +32,8 @@ data_pipeline/
 └── scripts/
     ├── init_db.py        # Skrypt tworzenia bazy danych i aplikowania schematu tabel
     ├── verify_gtfs.py    # Skrypt diagnostyczny danych statycznych (rekordy, kodowanie UTF-8, routing JOIN)
-    └── verify_realtime.py # Skrypt diagnostyczny pozycji realtime (granice Warszawy, top linie, rozmiar bazy)
+    ├── verify_realtime.py # Skrypt diagnostyczny pozycji realtime (granice Warszawy, top linie, rozmiar bazy)
+    └── verify_archive.py # Skrypt testowy i diagnostyczny archiwizacji Parquet (ZSTD, DuckDB, bezpieczny DELETE)
 ```
 
 ---
@@ -170,6 +172,79 @@ uv run python scripts/verify_realtime.py
 
 ---
 
+### 7. Archiwizacja do Parquet (`archiver.py`)
+Przenosi dane starsze niż zadany próg (domyślnie 24 godziny) z PostgreSQL do partycjonowanych plików Parquet z kompresją Zstandard (ZSTD).
+
+- **Partycjonowanie:** `data/archive/date=YYYY-MM-DD/hour=HH.parquet` (zgodne z konwencją Hive / DuckDB / PyArrow).
+- **Weryfikacja integralności:** Zapis następuje do pliku tymczasowego `.parquet.tmp`. Przed usunięciem danych z PostgreSQL skrypt odczytuje metadane pliku Parquet i weryfikuje zgodność liczby wierszy (`meta.num_rows == len(rows)`).
+- **Bezpieczny DELETE:** Dopiero po pomyślnym zapisie i weryfikacji Parquet, zarchiwizowane rekordy są usuwane z PostgreSQL w ramach transakcji atomowej. W razie jakiegokolwiek błędu baza pozostaje nienaruszona.
+- **Kompresja ZSTD:** Redukuje objętość danych o ponad **85-90%** (zamiast ~3.3 GB/dobę w bazie, pliki Parquet zajmują ~150-250 MB).
+- **Idempotentność:** Jeśli plik dla danej godziny już istnieje, nowe rekordy są scalane i deduplikowane po `(vehicle_id, time)`.
+
+```bash
+# Standardowa archiwizacja starszych niż 24h:
+uv run python archiver.py archive
+
+# Archiwizacja starszych niż N godzin (np. 4 godziny):
+uv run python archiver.py archive --older-than-hours 4
+
+# Symulacja (Dry Run) — sprawdza ile rekordów zostałoby zarchiwizowanych bez zmian na dysku/w bazie:
+uv run python archiver.py archive --older-than-hours 1 --dry-run
+
+# Eksport do Parquet z zachowaniem danych w PostgreSQL (bez usuwania):
+uv run python archiver.py archive --no-delete
+
+# Statystyki zarchiwizowanych plików:
+uv run python archiver.py stats
+```
+
+---
+
+### 8. Odpytywanie zarchiwizowanych danych przez DuckDB (`archiver.py query`)
+Umożliwia analityczne odpytywanie skompresowanych plików Parquet bez konieczności ich dekompresji na dysk:
+
+- **Partition Pruning:** Silnik DuckDB skanuje wyłącznie katalogi odpowiadające zadanemu zakresowi dat.
+- **Filter & Projection Pushdown:** Filtry po linii (`route_id`), pojeździe (`vehicle_id`) oraz rzutowanie kolumn są przekazywane bezpośrednio do warstwy dekodowania bloków Parquet.
+- **Interfejs programistyczny:**
+  ```python
+  from archiver import query_archived_positions
+
+  # Pobierz pozycje linii 503 z danego dnia jako pandas DataFrame:
+  df = query_archived_positions(date_from="2026-10-27", route_id="503")
+
+  # Pobierz jako PyArrow Table z wybranymi kolumnami:
+  table = query_archived_positions(
+      route_id=["180", "503"],
+      columns=["time", "vehicle_id", "route_id", "latitude", "longitude"],
+      as_arrow=True,
+  )
+  ```
+- **CLI query:**
+  ```bash
+  # Podgląd ostatnich zarchiwizowanych pozycji dla wybranej linii:
+  uv run python archiver.py query --route-id 503 --limit 10
+
+  # Filtrowanie po zakresie dat i pojeździe:
+  uv run python archiver.py query --date-from 2026-10-27 --vehicle-id V/503/10
+  ```
+
+---
+
+### 9. Weryfikacja modułu archiwizacji (`scripts/verify_archive.py`)
+Kompletny test end-to-end całego procesu archiwizacji:
+1. Wstawia syntetyczną paczkę 500 rekordów sprzed 48 godzin do `vehicle_positions`.
+2. Uruchamia `archive_old_positions()` do izolowanego katalogu testowego.
+3. Weryfikuje strukturę partycji `date=.../hour=...parquet`, schemat 10 kolumn, metadane wierszy oraz kompresję ZSTD.
+4. Potwierdza usunięcie rekordów z tabeli PostgreSQL.
+5. Testuje zapytania DuckDB (zakres dat, filtry linii, projection pushdown, format PyArrow).
+6. Sprząta dane i pliki testowe.
+
+```bash
+uv run python scripts/verify_archive.py
+```
+
+---
+
 ## 📊 Tabele i wolumen danych w PostgreSQL
 
 Po załadowaniu feedu GTFS Static oraz uruchomieniu collectora w bazie znajdują się:
@@ -194,6 +269,8 @@ Jeśli znajdujesz się w głównym katalogu `opti-transit/`, możesz uruchomić 
 
 ```bash
 uv run --project data_pipeline python data_pipeline/collector.py
+uv run --project data_pipeline python data_pipeline/archiver.py archive
+uv run --project data_pipeline python data_pipeline/scripts/verify_archive.py
 uv run --project data_pipeline python data_pipeline/scripts/verify_realtime.py
 uv run --project data_pipeline python data_pipeline/scripts/verify_gtfs.py
 uv run --project data_pipeline python data_pipeline/loaders/gtfs_static.py
