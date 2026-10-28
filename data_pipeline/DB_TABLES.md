@@ -169,26 +169,28 @@ Zawiera precyzyjną geometrię łamanych GPS (polilinii) do rysowania dokładneg
 
 ## 8. Tabela `vehicle_positions` (Bieżące pozycje pojazdów na żywo)
 
-Szereg czasowy gromadzący aktualne pozycje GPS autobusów, tramwajów, metra i pociągów SKM pobierane co 15 sekund z `vehicles.pb`.
+Szereg czasowy gromadzący aktualne pozycje GPS autobusów i tramwajów pobierane co 15 sekund z oficjalnego API m.st. Warszawy (`dane.um.warszawa.pl`).
 
 ### Struktura kolumn:
 | Kolumna | Typ SQL | Nullable | Klucz / Indeks | Opis biznesowy | Przykładowa wartość |
 |---|---|---|---|---|---|
-| `time` | `TIMESTAMPTZ` | NIE | `INDEX (time DESC)` | Znacznik czasu pozycji GPS wyemitowany przez nadajnik | `'2026-10-27 21:52:56+01'` |
-| `fetched_at` | `TIMESTAMPTZ` | NIE | - | Czas pobrania ramki przez collector (`DEFAULT NOW()`) | `'2026-10-27 21:53:09+01'` |
-| `vehicle_id` | `TEXT` | NIE | `idx_..._vehicle_time` | Unikalny identyfikator pojazdu w feedzie | `'V/213/2'`, `'V/3/011'`, `'V/180/10'` |
-| `trip_id` | `TEXT` | TAK | - | Identyfikator realizowanego kursu (JOIN z `gtfs_trips`) | `'2026-10-27:213:PcS:2:2123'` |
-| `route_id` | `TEXT` | TAK | `idx_..._route_time` | Numer linii | `'213'`, `'180'`, `'503'`, `'M1'`, `'S1'` |
-| `latitude` | `DOUBLE` | NIE | - | Aktualna szerokość geograficzna GPS | `52.175098` |
-| `longitude`| `DOUBLE` | NIE | - | Aktualna długość geograficzna GPS | `21.177116` |
-| `bearing` | `REAL` | TAK | - | Kąt jazdy / azymut pojazdu w stopniach | `145.5°`, `-105.0°` |
-| `speed` | `REAL` | TAK | - | Chwilowa prędkość pojazdu w m/s | `12.5` lub `NULL` (gdy brak w nadajniku) |
-| `vehicle_label` | `TEXT` | TAK | - | Numer taborowy/boczny wymalowany na pojeździe | `'9339'`, `'2140'`, `'1205'`, `'5893'` |
+| `time` | `TIMESTAMPTZ` | NIE | `INDEX (time DESC)` | Znacznik czasu pozycji GPS wyemitowany przez pojazd | `'2026-10-28 11:30:16+01'` |
+| `fetched_at` | `TIMESTAMPTZ` | NIE | - | Czas pobrania ramki przez collector (`DEFAULT NOW()`) | `'2026-10-28 11:30:20+01'` |
+| `vehicle_id` | `TEXT` | NIE | `idx_..._vehicle_time` | Unikalny identyfikator pojazdu w formacie `V/{Linia}/{NrBoczny}` | `'V/190/1001'`, `'V/9/2001'` |
+| `route_id` | `TEXT` | TAK | `idx_..._route_time` | Numer linii autobusowej lub tramwajowej | `'190'`, `'509'`, `'9'`, `'24'`, `'M1'` |
+| `brigade` | `TEXT` | TAK | `idx_..._route_brigade`| Numer brygady w rozkładzie miejskim | `'1'`, `'03'`, `'7'`, `'M1'` |
+| `latitude` | `DOUBLE` | NIE | - | Aktualna szerokość geograficzna GPS | `52.229712` |
+| `longitude`| `DOUBLE` | NIE | - | Aktualna długość geograficzna GPS | `21.012234` |
+| `vehicle_label` | `TEXT` | TAK | - | Numer taborowy/boczny pojazdu | `'1001'`, `'2001'`, `'9339'` |
+
+> [!NOTE]
+> Zgodnie ze specyfikacją oficjalnego API Warszawy, parametry pochodne (azymut `bearing` oraz prędkość `speed`) nie są nadawane przez GPS i są kalkulowane w warstwie analitycznej w locie z kolejnych próbek GPS pojazdu.
 
 ### 💡 Indeksy na tabeli `vehicle_positions`:
 1. `idx_vehicle_positions_vehicle_time ON (vehicle_id, time DESC)` — błyskawiczne odtworzenie ścieżki i historii pojedynczego pojazdu.
 2. `idx_vehicle_positions_route_time ON (route_id, time DESC)` — odpytanie o wszystkie pojazdy danej linii w danym oknie czasowym.
-3. `idx_vehicle_positions_time ON (time DESC)` — wykorzystywany przez archiwizator Parquet do usuwania danych starszych niż 24h.
+3. `idx_vehicle_positions_route_brigade ON (route_id, brigade)` — filtrowanie pojazdów wg linii i przypisanej brygady.
+4. `idx_vehicle_positions_time ON (time DESC)` — wykorzystywany przez archiwizator Parquet do usuwania danych starszych niż 24h.
 
 ---
 
@@ -232,12 +234,10 @@ pa.schema([
     ("time", pa.timestamp("us", tz="UTC")),
     ("fetched_at", pa.timestamp("us", tz="UTC")),
     ("vehicle_id", pa.string()),
-    ("trip_id", pa.string()),
     ("route_id", pa.string()),
+    ("brigade", pa.string()),
     ("latitude", pa.float64()),
     ("longitude", pa.float64()),
-    ("bearing", pa.float32()),
-    ("speed", pa.float32()),
     ("vehicle_label", pa.string()),
 ])
 ```
@@ -246,18 +246,17 @@ pa.schema([
 
 ## 🔗 Przykłady zapytań SQL łączących dane
 
-### 1. Połączenie bieżącej pozycji GPS z rozkładem jazdy i kierunkiem:
+### 1. Odpytanie o aktualne pozycje pojazdów danej linii i brygady:
 ```sql
 SELECT 
     vp.time AS czas_gps,
     vp.route_id AS linia,
+    vp.brigade AS brygada,
     vp.vehicle_label AS nr_boczny,
-    t.trip_headsign AS kierunek,
     vp.latitude,
     vp.longitude
 FROM vehicle_positions vp
-JOIN gtfs_trips t ON vp.trip_id = t.trip_id
-WHERE vp.route_id = '180'
+WHERE vp.route_id = '190'
 ORDER BY vp.time DESC
 LIMIT 10;
 ```

@@ -98,13 +98,12 @@ def verify_realtime_data() -> None:
             cur.execute("""
                 SELECT 
                     route_id,
+                    brigade,
                     vehicle_label,
-                    trip_id,
                     ROUND(latitude::numeric, 5),
                     ROUND(longitude::numeric, 5),
-                    COALESCE(bearing::text, '-'),
-                    COALESCE(ROUND(speed::numeric, 1)::text, '-'),
-                    TO_CHAR(time, 'YYYY-MM-DD HH24:MI:SS')
+                    TO_CHAR(time, 'YYYY-MM-DD HH24:MI:SS'),
+                    TO_CHAR(fetched_at, 'HH24:MI:SS')
                 FROM vehicle_positions
                 ORDER BY time DESC
                 LIMIT 8;
@@ -113,16 +112,15 @@ def verify_realtime_data() -> None:
 
             samples_table = Table(title="📍 Ostatnie zapisane pozycje pojazdów", border_style="magenta")
             samples_table.add_column("Linia", style="bold yellow")
-            samples_table.add_column("Nr boczny", style="cyan")
-            samples_table.add_column("Trip ID", style="dim")
+            samples_table.add_column("Brygada", style="cyan")
+            samples_table.add_column("Nr boczny", style="bold white")
             samples_table.add_column("Lat", style="white")
             samples_table.add_column("Lon", style="white")
-            samples_table.add_column("Kierunek", style="green")
-            samples_table.add_column("Prędkość", style="yellow")
-            samples_table.add_column("Czas GPS", style="magenta")
+            samples_table.add_column("Czas GPS (UTC)", style="magenta")
+            samples_table.add_column("Pobrano (UTC)", style="dim")
 
-            for r_id, label, trip, lat, lon, bearing, speed, t_str in samples:
-                samples_table.add_row(r_id or "-", label or "-", trip or "-", str(lat), str(lon), f"{bearing}°", f"{speed} m/s", t_str)
+            for r_id, brig, label, lat, lon, t_str, f_str in samples:
+                samples_table.add_row(r_id or "-", brig or "-", label or "-", str(lat), str(lon), t_str, f_str)
 
             console.print(samples_table)
 

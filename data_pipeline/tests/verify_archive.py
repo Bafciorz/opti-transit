@@ -76,12 +76,10 @@ def setup_synthetic_test_data() -> tuple[datetime, int]:
                     rec_time,
                     datetime.now(timezone.utc),
                     f"TEST_VEH_{i % 50:03d}",
-                    f"TEST_TRIP_{i:04d}",
                     TEST_ROUTE_ID,
+                    f"B{(i % 10) + 1}",
                     52.2297 + (i * 0.0001),
                     21.0122 + (i * 0.0001),
-                    float((i * 10) % 360),
-                    float(10.0 + (i % 30)),
                     f"Test Bus {i % 50}",
                 ))
 
@@ -89,8 +87,8 @@ def setup_synthetic_test_data() -> tuple[datetime, int]:
             with cur.copy(
                 """
                 COPY vehicle_positions (
-                    time, fetched_at, vehicle_id, trip_id, route_id,
-                    latitude, longitude, bearing, speed, vehicle_label
+                    time, fetched_at, vehicle_id, route_id, brigade,
+                    latitude, longitude, vehicle_label
                 ) FROM STDIN
                 """
             ) as copy:

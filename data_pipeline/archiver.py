@@ -44,12 +44,10 @@ VEHICLE_POSITIONS_SCHEMA = pa.schema([
     ("time", pa.timestamp("us", tz="UTC")),
     ("fetched_at", pa.timestamp("us", tz="UTC")),
     ("vehicle_id", pa.string()),
-    ("trip_id", pa.string()),
     ("route_id", pa.string()),
+    ("brigade", pa.string()),
     ("latitude", pa.float64()),
     ("longitude", pa.float64()),
-    ("bearing", pa.float32()),
-    ("speed", pa.float32()),
     ("vehicle_label", pa.string()),
 ])
 
@@ -173,12 +171,10 @@ def archive_old_positions(
                         time,
                         fetched_at,
                         vehicle_id,
-                        trip_id,
                         route_id,
+                        brigade,
                         latitude,
                         longitude,
-                        bearing,
-                        speed,
                         vehicle_label
                     FROM vehicle_positions
                     WHERE (time AT TIME ZONE %s) >= %s

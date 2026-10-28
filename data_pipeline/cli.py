@@ -340,10 +340,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--max-iterations", type=int, default=None, help="Max collector iterations")
 
     # Command: collect
+    from downloaders.gtfs_realtime import DEFAULT_REALTIME_URL
+
     p_collect = subparsers.add_parser("collect", help="Run realtime vehicle positions collector only")
     p_collect.add_argument("--interval", type=float, default=15.0, help="Polling interval in seconds")
     p_collect.add_argument("--max-iterations", type=int, default=None, help="Maximum collection iterations")
-    p_collect.add_argument("--url", default="https://mkuran.pl/gtfs/warsaw/vehicles.pb", help="GTFS-RT URL")
+    p_collect.add_argument("--url", default=DEFAULT_REALTIME_URL, help="Vehicle positions API URL")
 
     # Command: load-gtfs
     p_load = subparsers.add_parser("load-gtfs", help="Download and load static GTFS into PostgreSQL")

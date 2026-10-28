@@ -22,12 +22,10 @@ COPY vehicle_positions (
     time,
     fetched_at,
     vehicle_id,
-    trip_id,
     route_id,
+    brigade,
     latitude,
     longitude,
-    bearing,
-    speed,
     vehicle_label
 ) FROM STDIN;
 """
@@ -56,13 +54,11 @@ def insert_vehicle_positions(
                     p["time"],
                     p["fetched_at"],
                     p["vehicle_id"],
-                    p["trip_id"],
-                    p["route_id"],
+                    p.get("route_id"),
+                    p.get("brigade"),
                     p["latitude"],
                     p["longitude"],
-                    p["bearing"],
-                    p["speed"],
-                    p["vehicle_label"],
+                    p.get("vehicle_label"),
                 ))
     conn.commit()
     return len(positions)
@@ -91,13 +87,11 @@ async def async_insert_vehicle_positions(
                     p["time"],
                     p["fetched_at"],
                     p["vehicle_id"],
-                    p["trip_id"],
-                    p["route_id"],
+                    p.get("route_id"),
+                    p.get("brigade"),
                     p["latitude"],
                     p["longitude"],
-                    p["bearing"],
-                    p["speed"],
-                    p["vehicle_label"],
+                    p.get("vehicle_label"),
                 ))
     await conn.commit()
     return len(positions)

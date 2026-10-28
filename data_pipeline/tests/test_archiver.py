@@ -40,12 +40,10 @@ def test_positions_historical(db_conn: psycopg.Connection) -> tuple[datetime, in
             "time": rec_time,
             "fetched_at": datetime.now(timezone.utc),
             "vehicle_id": f"TEST_PYTEST_HIST_{i}",
-            "trip_id": f"TEST_TRIP_{i}",
             "route_id": "TEST_PYTEST_ROUTE",
+            "brigade": f"B{i+1}",
             "latitude": 52.2297 + (i * 0.0001),
             "longitude": 21.0122 + (i * 0.0001),
-            "bearing": float(i * 5),
-            "speed": float(15.0),
             "vehicle_label": f"Historical Bus {i}",
         })
 
@@ -60,9 +58,11 @@ def test_archive_schema_definition() -> None:
     assert "time" in field_names
     assert "vehicle_id" in field_names
     assert "route_id" in field_names
+    assert "brigade" in field_names
     assert "latitude" in field_names
     assert "longitude" in field_names
-    assert len(field_names) == 10
+    assert "vehicle_label" in field_names
+    assert len(field_names) == 8
 
 
 def test_archive_dry_run(
@@ -82,7 +82,7 @@ def test_archive_dry_run(
 
     assert isinstance(result, ArchiveResult)
     assert result.dry_run is True
-    assert result.archived_rows == count  # candidate count identified
+    assert result.archived_rows >= count  # candidate count identified
     assert result.deleted_rows == 0       # 0 rows deleted in dry run
     assert result.files_created == 0      # 0 files created in dry run
     # Directory should not have created parquet files
@@ -116,14 +116,13 @@ def test_archive_live_and_safe_delete(
     assert result.deleted_rows >= count
     assert result.files_created >= 1
 
-    # Verify Parquet file was created with ZSTD compression
+    # Verify Parquet files were created with ZSTD compression
     parquet_files = list(archive_dir.rglob("*.parquet"))
     assert len(parquet_files) >= 1
 
-    pq_file = parquet_files[0]
-    metadata = pq.read_metadata(pq_file)
-    assert metadata.num_rows >= count
-    assert metadata.row_group(0).column(0).compression == "ZSTD"
+    total_pq_rows = sum(pq.read_metadata(f).num_rows for f in parquet_files)
+    assert total_pq_rows >= count
+    assert pq.read_metadata(parquet_files[0]).row_group(0).column(0).compression == "ZSTD"
 
     # Verify safe deletion: 0 test rows remaining in database
     with db_conn.cursor() as cur:

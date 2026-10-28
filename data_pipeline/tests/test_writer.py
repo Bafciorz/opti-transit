@@ -22,12 +22,10 @@ def _build_test_positions(prefix: str, count: int = 5) -> list[dict]:
             "time": now,
             "fetched_at": now,
             "vehicle_id": f"TEST_PYTEST_{prefix}_{i}",
-            "trip_id": f"TEST_TRIP_{i}",
             "route_id": "TEST_PYTEST_ROUTE",
+            "brigade": f"B{i+1}",
             "latitude": 52.2297 + (i * 0.001),
             "longitude": 21.0122 + (i * 0.001),
-            "bearing": float(i * 45),
-            "speed": float(10 + i),
             "vehicle_label": f"Test Bus {i}",
         }
         for i in range(count)
@@ -51,7 +49,7 @@ def test_insert_vehicle_positions_sync(db_conn: psycopg.Connection) -> None:
     with db_conn.cursor() as cur:
         cur.execute(
             """
-            SELECT vehicle_id, route_id, latitude, longitude, bearing, speed, vehicle_label
+            SELECT vehicle_id, route_id, brigade, latitude, longitude, vehicle_label
             FROM vehicle_positions
             WHERE vehicle_id LIKE 'TEST_PYTEST_SYNC%'
             ORDER BY vehicle_id;
@@ -64,11 +62,10 @@ def test_insert_vehicle_positions_sync(db_conn: psycopg.Connection) -> None:
         first = rows[0]
         assert first[0] == "TEST_PYTEST_SYNC_0"
         assert first[1] == "TEST_PYTEST_ROUTE"
-        assert first[2] == pytest.approx(52.2297, abs=1e-4)
-        assert first[3] == pytest.approx(21.0122, abs=1e-4)
-        assert first[4] == 0.0
-        assert first[5] == 10.0
-        assert first[6] == "Test Bus 0"
+        assert first[2] == "B1"
+        assert first[3] == pytest.approx(52.2297, abs=1e-4)
+        assert first[4] == pytest.approx(21.0122, abs=1e-4)
+        assert first[5] == "Test Bus 0"
 
 
 @pytest.mark.asyncio

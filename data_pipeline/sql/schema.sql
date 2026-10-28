@@ -113,12 +113,10 @@ CREATE TABLE IF NOT EXISTS vehicle_positions (
     time TIMESTAMPTZ NOT NULL,
     fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     vehicle_id TEXT NOT NULL,
-    trip_id TEXT,
     route_id TEXT,
+    brigade TEXT,
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
-    bearing REAL,
-    speed REAL,
     vehicle_label TEXT
 );
 
@@ -143,6 +141,7 @@ CREATE TABLE IF NOT EXISTS feed_metadata (
 -- vehicle_positions: wyszukiwanie historii danego pojazdu lub linii oraz archiwizacja po czasie
 CREATE INDEX IF NOT EXISTS idx_vehicle_positions_vehicle_time ON vehicle_positions (vehicle_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_vehicle_positions_route_time ON vehicle_positions (route_id, time DESC);
+CREATE INDEX IF NOT EXISTS idx_vehicle_positions_route_brigade ON vehicle_positions (route_id, brigade);
 CREATE INDEX IF NOT EXISTS idx_vehicle_positions_time ON vehicle_positions (time DESC);
 
 -- GTFS static: indeksy do szybkiego planowania podróży (routing)

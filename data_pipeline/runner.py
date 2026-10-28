@@ -115,10 +115,11 @@ class PipelineRunner:
 
     async def run(self) -> None:
         """Starts all pipeline loops concurrently."""
+        source_label = "dane.um.warszawa.pl [Official Warsaw API]" if "dane.um.warszawa.pl" in self.realtime_url else "mkuran.pl [GTFS-RT]"
         console.print(
             Panel.fit(
                 "[bold cyan]Opti-Transit Data Pipeline — Unified Runner[/bold cyan]\n"
-                f"• Realtime Collector: [green]ENABLED[/green] (every {self.collector_interval}s)\n"
+                f"• Realtime Collector: [green]ENABLED[/green] (every {self.collector_interval}s, source: [cyan]{source_label}[/cyan])\n"
                 f"• Static GTFS Sync:   {'[green]ENABLED[/green] (daily at ' + str(self.static_sync_hour) + ':00)' if self.enable_static_sync else '[dim]DISABLED[/dim]'}\n"
                 f"• Parquet Archiver:   {'[green]ENABLED[/green] (daily at ' + str(self.archive_hour) + ':00, >' + str(self.retention_hours) + 'h)' if self.enable_archiver else '[dim]DISABLED[/dim]'}\n"
                 f"• Health Monitor:     [green]ENABLED[/green] (every {self.monitor_interval}s)\n"
@@ -179,7 +180,15 @@ class PipelineRunner:
                             duration_ms=duration_ms,
                             skipped=True,
                         )
-                        self.logger.debug("GTFS-RT feed duplicate or unavailable (skipped)")
+                        last_ts_str = (
+                            datetime.fromtimestamp(downloader.last_feed_timestamp, tz=timezone.utc).strftime("%H:%M:%S")
+                            if downloader.last_feed_timestamp
+                            else "unknown"
+                        )
+                        self.logger.info(
+                            "Duplicate feed skipped: external server has not updated positions yet (timestamp: %s)",
+                            last_ts_str,
+                        )
                     else:
                         feed_ts, positions = fetch_result
                         feed_dt = datetime.fromtimestamp(feed_ts, tz=timezone.utc)
