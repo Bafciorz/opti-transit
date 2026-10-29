@@ -247,25 +247,6 @@ def cmd_archive(args: argparse.Namespace) -> None:
     )
 
 
-def cmd_query(args: argparse.Namespace) -> None:
-    """Queries archived Parquet files using DuckDB."""
-    from archiver import DEFAULT_ARCHIVE_DIR, query_archived_positions
-
-    df = query_archived_positions(
-        date_from=args.date_from,
-        date_to=args.date_to,
-        route_id=args.route_id,
-        vehicle_id=args.vehicle_id,
-        archive_dir=args.archive_dir or DEFAULT_ARCHIVE_DIR,
-        limit=args.limit,
-    )
-
-    if df.empty:
-        console.print("[dim]No records matched the query criteria.[/dim]")
-    else:
-        console.print(f"[bold green]Retrieved {len(df)} row(s):[/bold green]")
-        console.print(df.to_string())
-
 
 def cmd_verify(args: argparse.Namespace) -> None:
     """Runs automated diagnostic and verification scripts."""
@@ -363,15 +344,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_archive.add_argument("--no-delete", action="store_true", help="Export to Parquet without deleting from PG")
     p_archive.add_argument("--archive-dir", type=str, default=None, help="Target archive directory")
 
-    # Command: query
-    p_query = subparsers.add_parser("query", help="Query archived Parquet files using DuckDB")
-    p_query.add_argument("--date-from", type=str, default=None, help="Start date/timestamp")
-    p_query.add_argument("--date-to", type=str, default=None, help="End date/timestamp")
-    p_query.add_argument("--route-id", type=str, default=None, help="Filter by route ID")
-    p_query.add_argument("--vehicle-id", type=str, default=None, help="Filter by vehicle ID")
-    p_query.add_argument("--limit", type=int, default=20, help="Max rows to display")
-    p_query.add_argument("--archive-dir", type=str, default=None, help="Archive directory")
-
     # Command: verify
     p_verify = subparsers.add_parser("verify", help="Run automated verification checks")
     p_verify.add_argument(
@@ -405,7 +377,6 @@ def main() -> None:
         "collect": cmd_collect,
         "load-gtfs": cmd_load_gtfs,
         "archive": cmd_archive,
-        "query": cmd_query,
         "verify": cmd_verify,
         "init-db": cmd_init_db,
     }

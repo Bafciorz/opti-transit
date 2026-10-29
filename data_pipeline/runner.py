@@ -115,7 +115,7 @@ class PipelineRunner:
 
     async def run(self) -> None:
         """Starts all pipeline loops concurrently."""
-        source_label = "dane.um.warszawa.pl [Official Warsaw API]" if "dane.um.warszawa.pl" in self.realtime_url else "mkuran.pl [GTFS-RT]"
+        source_label = "dane.um.warszawa.pl [Official Warsaw API]"
         console.print(
             Panel.fit(
                 "[bold cyan]Opti-Transit Data Pipeline — Unified Runner[/bold cyan]\n"

@@ -13,7 +13,6 @@ from typing import Any
 
 import psycopg
 import pytest
-from google.transit import gtfs_realtime_pb2
 
 import asyncio
 
@@ -114,44 +113,3 @@ def sample_gtfs_zip(tmp_path: Path) -> Path:
 
     return zip_path
 
-
-@pytest.fixture
-def sample_realtime_pb_bytes() -> bytes:
-    """Generates a serialized GTFS Realtime FeedMessage protobuf with test vehicles."""
-    feed = gtfs_realtime_pb2.FeedMessage()
-    feed.header.gtfs_realtime_version = "2.0"
-    feed.header.incrementality = gtfs_realtime_pb2.FeedHeader.FULL_DATASET
-    feed.header.timestamp = 1793100000  # fixed timestamp
-
-    # Entity 1: Bus 190
-    e1 = feed.entity.add()
-    e1.id = "V/190/1001"
-    e1.vehicle.trip.trip_id = "2026-10-27:190:PcS:1001:1200"
-    e1.vehicle.trip.route_id = "190"
-    e1.vehicle.position.latitude = 52.2297
-    e1.vehicle.position.longitude = 21.0122
-    e1.vehicle.position.bearing = 90.0
-    e1.vehicle.position.speed = 12.5
-    e1.vehicle.vehicle.id = "TEST_PYTEST_VEH_1"
-    e1.vehicle.vehicle.label = "Bus 190/1"
-    e1.vehicle.timestamp = 1793100000
-
-    # Entity 2: Metro M1
-    e2 = feed.entity.add()
-    e2.id = "V/M1/2001"
-    e2.vehicle.trip.trip_id = "2026-10-27:M1:Kabaty:2001:1205"
-    e2.vehicle.trip.route_id = "M1"
-    e2.vehicle.position.latitude = 52.2310
-    e2.vehicle.position.longitude = 21.0050
-    e2.vehicle.position.bearing = 180.0
-    e2.vehicle.position.speed = 18.0
-    e2.vehicle.vehicle.id = "TEST_PYTEST_VEH_2"
-    e2.vehicle.vehicle.label = "Metro M1"
-    e2.vehicle.timestamp = 1793100000
-
-    # Entity 3: Vehicle with missing coordinates (should be ignored)
-    e3 = feed.entity.add()
-    e3.id = "V/INV/3001"
-    e3.vehicle.vehicle.id = "TEST_PYTEST_VEH_3"
-
-    return feed.SerializeToString()

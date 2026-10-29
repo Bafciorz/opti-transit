@@ -133,20 +133,6 @@ def test_cli_parser_archive() -> None:
     assert args.no_delete is True
 
 
-def test_cli_parser_query() -> None:
-    """Verifies CLI parsing of query command."""
-    parser = build_parser()
-    args = parser.parse_args([
-        "query",
-        "--route-id", "190",
-        "--vehicle-id", "1001",
-        "--limit", "50",
-    ])
-    assert args.command == "query"
-    assert args.route_id == "190"
-    assert args.vehicle_id == "1001"
-    assert args.limit == 50
-
 
 def test_cli_parser_verify() -> None:
     """Verifies CLI parsing of verify command."""

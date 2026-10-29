@@ -1,8 +1,8 @@
-"""Parquet archival and reader module for Opti-Transit.
+"""Parquet archival module for Opti-Transit.
 
 Transfers historical vehicle position records from PostgreSQL to partitioned
 Parquet files compressed with Zstandard (ZSTD), verifies data integrity, and
-removes archived rows from PostgreSQL. Provides fast analytical querying via DuckDB.
+removes archived rows from PostgreSQL.
 
 Partition format:
     {archive_dir}/date=YYYY-MM-DD/hour=HH.parquet
@@ -27,8 +27,6 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import duckdb
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from rich.console import Console
@@ -312,126 +310,6 @@ def _print_archive_summary(res: ArchiveResult) -> None:
     )
 
 
-def query_archived_positions(
-    date_from: str | date | datetime | None = None,
-    date_to: str | date | datetime | None = None,
-    route_id: str | list[str] | None = None,
-    vehicle_id: str | list[str] | None = None,
-    archive_dir: Path | str = DEFAULT_ARCHIVE_DIR,
-    columns: list[str] | None = None,
-    limit: int | None = None,
-    as_arrow: bool = False,
-) -> pd.DataFrame | pa.Table:
-    """Queries archived vehicle positions using DuckDB for ultra-fast partition scanning.
-
-    Args:
-        date_from: Start date/timestamp (inclusive).
-        date_to: End date/timestamp (inclusive).
-        route_id: Route ID string or list of route IDs to filter on.
-        vehicle_id: Vehicle ID string or list of vehicle IDs to filter on.
-        archive_dir: Path to directory containing partition folders.
-        columns: List of specific column names to return (projection pushdown).
-        limit: Optional maximum rows to return.
-        as_arrow: If True, returns a PyArrow Table instead of pandas DataFrame.
-
-    Returns:
-        pandas DataFrame or PyArrow Table containing query results.
-    """
-    archive_path = Path(archive_dir)
-    pattern = f"{archive_path.as_posix()}/*/*.parquet"
-
-    # Check if any parquet files exist
-    parquet_files = list(archive_path.glob("*/*.parquet"))
-    if not parquet_files:
-        empty_schema = VEHICLE_POSITIONS_SCHEMA
-        if columns:
-            empty_schema = pa.schema([f for f in empty_schema if f.name in columns])
-        empty_tbl = empty_schema.empty_table()
-        return empty_tbl if as_arrow else empty_tbl.to_pandas()
-
-    # Projection
-    if columns:
-        valid_cols = [c for c in columns if c in VEHICLE_POSITIONS_SCHEMA.names or c == "date"]
-        select_cols = ", ".join(f'"{c}"' for c in valid_cols)
-    else:
-        select_cols = "*"
-
-    # Build SQL query with DuckDB
-    where_clauses: list[str] = []
-    params: list[Any] = []
-
-    if date_from is not None:
-        if isinstance(date_from, datetime):
-            d_from_dt = date_from if date_from.tzinfo else date_from.replace(tzinfo=timezone.utc)
-            where_clauses.append("time >= ?")
-            params.append(d_from_dt.isoformat())
-        elif isinstance(date_from, date):
-            where_clauses.append("date >= ?")
-            params.append(date_from.strftime("%Y-%m-%d"))
-        else:
-            s_from = str(date_from).strip()
-            if len(s_from) == 10:
-                where_clauses.append("date >= ?")
-                params.append(s_from)
-            else:
-                where_clauses.append("time >= ?")
-                params.append(s_from)
-
-    if date_to is not None:
-        if isinstance(date_to, datetime):
-            d_to_dt = date_to if date_to.tzinfo else date_to.replace(tzinfo=timezone.utc)
-            where_clauses.append("time <= ?")
-            params.append(d_to_dt.isoformat())
-        elif isinstance(date_to, date):
-            where_clauses.append("date <= ?")
-            params.append(date_to.strftime("%Y-%m-%d"))
-        else:
-            s_to = str(date_to).strip()
-            if len(s_to) == 10:
-                where_clauses.append("date <= ?")
-                params.append(s_to)
-            else:
-                where_clauses.append("time <= ?")
-                params.append(s_to)
-
-    if route_id is not None:
-        if isinstance(route_id, list):
-            placeholders = ", ".join(["?"] * len(route_id))
-            where_clauses.append(f"route_id IN ({placeholders})")
-            params.extend(str(r) for r in route_id)
-        else:
-            where_clauses.append("route_id = ?")
-            params.append(str(route_id))
-
-    if vehicle_id is not None:
-        if isinstance(vehicle_id, list):
-            placeholders = ", ".join(["?"] * len(vehicle_id))
-            where_clauses.append(f"vehicle_id IN ({placeholders})")
-            params.extend(str(v) for v in vehicle_id)
-        else:
-            where_clauses.append("vehicle_id = ?")
-            params.append(str(vehicle_id))
-
-    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-    limit_sql = f"LIMIT {int(limit)}" if limit is not None else ""
-
-    sql = f"""
-        SELECT {select_cols}
-        FROM read_parquet('{pattern}', hive_partitioning=True)
-        {where_sql}
-        ORDER BY time ASC
-        {limit_sql}
-    """
-
-    con = duckdb.connect()
-    try:
-        rel = con.sql(sql, params=params)
-        if as_arrow:
-            return rel.to_arrow_table()
-        return rel.df()
-    finally:
-        con.close()
-
 
 def get_archive_stats(archive_dir: Path | str = DEFAULT_ARCHIVE_DIR) -> dict[str, Any]:
     """Inspects the Parquet archive directory and returns volume and partition statistics."""
@@ -520,20 +398,6 @@ def main() -> None:
         help="Export to Parquet without deleting from PostgreSQL",
     )
 
-    # Command: query
-    query_parser = subparsers.add_parser("query", help="Query archived Parquet files")
-    query_parser.add_argument("--date-from", type=str, default=None, help="Start date/time")
-    query_parser.add_argument("--date-to", type=str, default=None, help="End date/time")
-    query_parser.add_argument("--route-id", type=str, default=None, help="Filter by route ID")
-    query_parser.add_argument("--vehicle-id", type=str, default=None, help="Filter by vehicle ID")
-    query_parser.add_argument("--limit", type=int, default=20, help="Max rows to display")
-    query_parser.add_argument(
-        "--archive-dir",
-        type=str,
-        default=str(DEFAULT_ARCHIVE_DIR),
-        help="Archive directory path",
-    )
-
     # Command: stats
     stats_parser = subparsers.add_parser("stats", help="Show Parquet archive statistics")
     stats_parser.add_argument(
@@ -560,21 +424,6 @@ def main() -> None:
             delete_after=not no_delete,
             dry_run=dry_run,
         )
-
-    elif args.command == "query":
-        df = query_archived_positions(
-            date_from=args.date_from,
-            date_to=args.date_to,
-            route_id=args.route_id,
-            vehicle_id=args.vehicle_id,
-            archive_dir=args.archive_dir,
-            limit=args.limit,
-        )
-        if df.empty:
-            console.print("[dim]No records matched the query criteria.[/dim]")
-        else:
-            console.print(f"[bold green]Retrieved {len(df)} row(s):[/bold green]")
-            console.print(df.to_string())
 
     elif args.command == "stats":
         stats = get_archive_stats(archive_dir=args.archive_dir)

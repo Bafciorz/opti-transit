@@ -8,8 +8,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import duckdb
-import pandas as pd
 import psycopg
 import pyarrow.parquet as pq
 import pytest
@@ -20,7 +18,6 @@ from archiver import (
     ArchiveResult,
     archive_old_positions,
     get_archive_stats,
-    query_archived_positions,
 )
 from writers.vehicle_positions import insert_vehicle_positions
 
@@ -131,49 +128,6 @@ def test_archive_live_and_safe_delete(
         )
         assert cur.fetchone()[0] == 0
 
-
-def test_duckdb_query_archived_positions(
-    db_conn: psycopg.Connection,
-    test_positions_historical: tuple[datetime, int],
-    tmp_path: Path,
-) -> None:
-    """Verifies DuckDB query reader with filtering by date, route_id, and projection."""
-    hist_time, count = test_positions_historical
-    archive_dir = tmp_path / "query_archive"
-
-    archive_old_positions(
-        older_than_hours=24.0,
-        archive_dir=archive_dir,
-        delete_after=True,
-    )
-
-    # 1. Query all
-    df = query_archived_positions(archive_dir=archive_dir)
-    assert isinstance(df, pd.DataFrame)
-    assert len(df) >= count
-    assert "vehicle_id" in df.columns
-    assert "latitude" in df.columns
-
-    # 2. Filter by route_id
-    df_route = query_archived_positions(
-        route_id="TEST_PYTEST_ROUTE",
-        archive_dir=archive_dir,
-    )
-    assert len(df_route) == count
-
-    # 3. Filter with non-matching route_id
-    df_empty = query_archived_positions(
-        route_id="NON_EXISTENT_ROUTE",
-        archive_dir=archive_dir,
-    )
-    assert df_empty.empty
-
-    # 4. Limit parameter
-    df_limit = query_archived_positions(
-        archive_dir=archive_dir,
-        limit=5,
-    )
-    assert len(df_limit) == 5
 
 
 def test_get_archive_stats(

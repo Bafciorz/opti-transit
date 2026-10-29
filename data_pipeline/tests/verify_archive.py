@@ -25,8 +25,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import duckdb
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from rich.console import Console
@@ -41,7 +39,6 @@ from archiver import (
     VEHICLE_POSITIONS_SCHEMA,
     archive_old_positions,
     get_archive_stats,
-    query_archived_positions,
 )
 from db import get_connection
 
@@ -161,48 +158,24 @@ def verify_archival_and_deletion(test_time: datetime, expected_count: int) -> Pa
     return parquet_file
 
 
-def verify_parquet_reader(test_time: datetime) -> None:
-    """Tests the DuckDB reader query_archived_positions."""
-    console.print(f"\n[cyan]Testing query_archived_positions() reader interface...[/cyan]")
+def verify_parquet_files(test_time: datetime) -> None:
+    """Verifies that generated Parquet files can be read with PyArrow and stats are accurate."""
+    console.print(f"\n[cyan]Testing Parquet file read and metadata via PyArrow...[/cyan]")
 
     tz_warsaw = ZoneInfo(DEFAULT_TIMEZONE)
     local_time = test_time.astimezone(tz_warsaw)
     date_str = local_time.strftime("%Y-%m-%d")
+    hour_str = local_time.strftime("%H")
 
-    # 1. Query by date and route
-    df = query_archived_positions(
-        date_from=date_str,
-        date_to=date_str,
-        route_id=TEST_ROUTE_ID,
-        archive_dir=TEST_ARCHIVE_DIR,
-    )
-    assert isinstance(df, pd.DataFrame), "Expected pandas DataFrame"
-    assert len(df) == TEST_ROW_COUNT, f"Expected {TEST_ROW_COUNT} rows, got {len(df)}"
-    console.print(f"[green][OK] Filter query (date + route_id): returned {len(df)} rows as DataFrame.[/green]")
+    parquet_file = TEST_ARCHIVE_DIR / f"date={date_str}" / f"hour={hour_str}.parquet"
+    assert parquet_file.exists(), f"Parquet file {parquet_file} does not exist"
 
-    # 2. Query with column projection
-    proj_cols = ["time", "vehicle_id", "route_id", "latitude", "longitude"]
-    df_proj = query_archived_positions(
-        route_id=TEST_ROUTE_ID,
-        columns=proj_cols,
-        archive_dir=TEST_ARCHIVE_DIR,
-        limit=5,
-    )
-    assert list(df_proj.columns) == proj_cols, f"Columns mismatch: {list(df_proj.columns)}"
-    assert len(df_proj) == 5, f"Limit 5 failed, got {len(df_proj)}"
-    console.print(f"[green][OK] Projection pushdown (5 columns, LIMIT 5): OK.[/green]")
+    tbl = pq.read_table(parquet_file)
+    assert tbl.num_rows == TEST_ROW_COUNT, f"Expected {TEST_ROW_COUNT} rows, got {tbl.num_rows}"
+    assert "route_id" in tbl.column_names
+    assert "brigade" in tbl.column_names
+    console.print(f"[green][OK] PyArrow read: successfully read {tbl.num_rows} rows from {parquet_file.name}.[/green]")
 
-    # 3. Query as Arrow table
-    arrow_tbl = query_archived_positions(
-        route_id=TEST_ROUTE_ID,
-        archive_dir=TEST_ARCHIVE_DIR,
-        as_arrow=True,
-    )
-    assert isinstance(arrow_tbl, pa.Table), "Expected PyArrow Table"
-    assert arrow_tbl.num_rows == TEST_ROW_COUNT
-    console.print(f"[green][OK] Arrow Table return format: OK ({arrow_tbl.num_rows} rows).[/green]")
-
-    # 4. Check archive stats
     stats = get_archive_stats(archive_dir=TEST_ARCHIVE_DIR)
     assert stats["total_files"] >= 1
     assert stats["total_rows"] >= TEST_ROW_COUNT
@@ -220,7 +193,7 @@ def main() -> None:
     console.print(
         Panel.fit(
             "[bold green]Opti-Transit Data Pipeline — Faza 4 Verification[/bold green]\n"
-            "Testing Parquet Archiver (PG -> Parquet ZSTD, Safe DELETE) and DuckDB Reader",
+            "Testing Parquet Archiver (PG -> Parquet ZSTD, Safe DELETE, PyArrow Reader)",
             border_style="cyan",
         )
     )
@@ -228,7 +201,7 @@ def main() -> None:
     try:
         test_time, expected_count = setup_synthetic_test_data()
         verify_archival_and_deletion(test_time, expected_count)
-        verify_parquet_reader(test_time)
+        verify_parquet_files(test_time)
 
         console.print(
             Panel(
@@ -237,7 +210,7 @@ def main() -> None:
                 "• Partitioning path: data/archive/date=YYYY-MM-DD/hour=HH.parquet\n"
                 "• Exact row count integrity check before deletion verified\n"
                 "• Safe transactional DELETE from PostgreSQL verified\n"
-                "• DuckDB reader (DataFrame, projection, filter, Arrow) verified\n"
+                "• Direct PyArrow reading verified\n"
                 "• Idempotent append and deduplication verified",
                 border_style="green",
             )

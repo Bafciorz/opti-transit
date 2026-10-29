@@ -215,33 +215,16 @@ uv run python archiver.py stats
 
 ---
 
-### 8. Odpytywanie zarchiwizowanych danych przez DuckDB (`archiver.py query`)
-Umożliwia analityczne odpytywanie skompresowanych plików Parquet bez konieczności ich dekompresji na dysk:
+### 8. Odczyt zarchiwizowanych danych Parquet
+Zarchiwizowane pliki Parquet w katalogu `data/archive/` mogą być odpytywane bezpośrednio za pomocą dowolnego silnika analitycznego OLAP (np. DuckDB, Polars, Apache Spark) lub wczytywane przez `pyarrow.parquet`:
 
-- **Partition Pruning:** Silnik DuckDB skanuje wyłącznie katalogi odpowiadające zadanemu zakresowi dat.
-- **Filter & Projection Pushdown:** Filtry po linii (`route_id`), pojeździe (`vehicle_id`) oraz rzutowanie kolumn są przekazywane bezpośrednio do warstwy dekodowania bloków Parquet.
-- **Interfejs programistyczny:**
-  ```python
-  from archiver import query_archived_positions
+```python
+import pyarrow.parquet as pq
 
-  # Pobierz pozycje linii 503 z danego dnia jako pandas DataFrame:
-  df = query_archived_positions(date_from="2026-10-27", route_id="503")
-
-  # Pobierz jako PyArrow Table z wybranymi kolumnami:
-  table = query_archived_positions(
-      route_id=["180", "503"],
-      columns=["time", "vehicle_id", "route_id", "latitude", "longitude"],
-      as_arrow=True,
-  )
-  ```
-- **CLI query:**
-  ```bash
-  # Podgląd ostatnich zarchiwizowanych pozycji dla wybranej linii:
-  uv run python archiver.py query --route-id 503 --limit 10
-
-  # Filtrowanie po zakresie dat i pojeździe:
-  uv run python archiver.py query --date-from 2026-10-27 --vehicle-id V/503/10
-  ```
+# Bezpośredni odczyt partycji godzinowej za pomocą PyArrow:
+table = pq.read_table("data/archive/date=2026-10-28/hour=12.parquet")
+df = table.to_pandas()
+```
 
 ---
 
