@@ -1,0 +1,15 @@
+services:
+  postgres-local:
+    image: postgres:16-alpine
+    container_name: opti-transit-db-local
+    environment:
+      POSTGRES_DB: optitransit_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - local_pgdata:/var/lib/postgresql/data
+
+volumes:
+  local_pgdata:
