@@ -1,0 +1,40 @@
+services:
+  backend-db:
+    image: postgres:17-alpine
+    container_name: opti-transit-dev-db
+    restart: always
+    environment:
+      POSTGRES_DB: opti_transit_backend
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_password
+    volumes:
+      - dev_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - opti-network
+
+  backend:
+    image: ghcr.io/bafciorz/opti-transit-backend:dev
+    container_name: opti-transit-dev-backend
+    restart: always
+    depends_on:
+      - backend-db
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_HOST: backend-db
+      DB_PORT: 5432
+      DB_NAME: opti_transit_backend
+      DB_USER: dev_user
+      DB_PASSWORD: dev_password
+    ports:
+      - "8080:8080"
+    networks:
+      - opti-network
+
+networks:
+  opti-network:
+    driver: bridge
+
+volumes:
+  dev_db_data:
