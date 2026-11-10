@@ -1,6 +1,6 @@
 # Opti-Transit — Data Pipeline
 
-Moduł pobierania, przetwarzania i archiwizacji danych Warszawskiego Transportu Publicznego (WTP/ZTM) dla aplikacji wyszukiwania tras i przesiadek **Opti-Transit**.
+Moduł pobierania, przetwarzania i archiwizacji danych Warszawskiego Transportu Publicznego (WTP/ZTM) dla aplikacji wyszukiwania tras i przesiadek **Opti-Transit**
 
 Projekt w języku Python (>=3.14) zarządzany w całości przez nowoczesny menedżer pakietów **`uv`**.
 
