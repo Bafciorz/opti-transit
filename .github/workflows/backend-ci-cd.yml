@@ -18,26 +18,11 @@ env:
 
 jobs:
   # -------------------------------------------------------------
-  # KROK 1: CI (Testy, walidacja kodu i Liquibase z bazą PostgreSQL)
+  # KROK 1: CI (Testy z bazą H2 w pamięci)
   # -------------------------------------------------------------
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: opti_transit_backend
-          POSTGRES_USER: dev_user
-          POSTGRES_PASSWORD: dev_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -50,15 +35,8 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Run Maven Tests & Liquibase Validation
+      - name: Run Maven Tests
         working-directory: backend
-        env:
-          SPRING_PROFILES_ACTIVE: dev
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: opti_transit_backend
-          DB_USER: dev_user
-          DB_PASSWORD: dev_password
         run: |
           chmod +x mvnw
           ./mvnw clean test
