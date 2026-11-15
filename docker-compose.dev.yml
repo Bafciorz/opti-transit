@@ -14,6 +14,27 @@ services:
     networks:
       - opti-network
 
+  data-pipeline:
+    image: ghcr.io/bafciorz/opti-transit-data-pipeline:dev
+    container_name: opti-transit-dev-data-pipeline
+    restart: always
+    depends_on:
+      - backend-db
+    environment:
+      DB_HOST: backend-db
+      DB_PORT: 5432
+      DB_NAME: opti_transit_backend
+      DB_USER: dev_user
+      DB_PASSWORD: dev_password
+      GTFS_STATIC_URL: https://mkuran.pl/gtfs/warsaw.zip
+      GTFS_REALTIME_VEHICLES_URL: https://mkuran.pl/gtfs/warsaw/vehicles.pb
+      ARCHIVE_RETENTION_HOURS: "24"
+      PARQUET_OUTPUT_DIR: /app/data/archive
+    volumes:
+      - data_pipeline_archive:/app/data/archive
+    networks:
+      - opti-network
+
   backend:
     image: ghcr.io/bafciorz/opti-transit-backend:dev
     container_name: opti-transit-dev-backend
@@ -38,3 +59,4 @@ networks:
 
 volumes:
   dev_db_data:
+  data_pipeline_archive:
