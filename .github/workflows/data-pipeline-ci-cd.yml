@@ -25,7 +25,7 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: opti_transit
+          POSTGRES_DB: opti_transit_pipeline
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
@@ -39,7 +39,7 @@ jobs:
     env:
       DB_HOST: localhost
       DB_PORT: 5432
-      DB_NAME: opti_transit
+      DB_NAME: opti_transit_pipeline
       DB_USER: postgres
       DB_PASSWORD: postgres
 

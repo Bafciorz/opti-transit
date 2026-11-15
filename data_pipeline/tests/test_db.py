@@ -29,8 +29,8 @@ from db import (
 def test_database_config() -> None:
     """Verifies database configuration loading and connection strings."""
     config = get_config()
-    assert config.dbname == "opti_transit"
-    assert "opti_transit" in config.conninfo
+    assert config.dbname == "opti_transit_pipeline"
+    assert "opti_transit_pipeline" in config.conninfo
     custom_info = config.conninfo_for_db("custom_db")
     assert "dbname=custom_db" in custom_info
 

@@ -29,7 +29,7 @@ services:
     environment:
       DB_HOST: backend-db
       DB_PORT: 5432
-      DB_NAME: opti_transit
+      DB_NAME: opti_transit_pipeline
       DB_USER: dev_user
       DB_PASSWORD: dev_password
       GTFS_STATIC_URL: https://mkuran.pl/gtfs/warsaw.zip
