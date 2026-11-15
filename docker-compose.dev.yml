@@ -11,6 +11,11 @@ services:
       - dev_db_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev_user -d opti_transit_backend"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - opti-network
 
@@ -19,11 +24,12 @@ services:
     container_name: opti-transit-dev-data-pipeline
     restart: always
     depends_on:
-      - backend-db
+      backend-db:
+        condition: service_healthy
     environment:
       DB_HOST: backend-db
       DB_PORT: 5432
-      DB_NAME: opti_transit_backend
+      DB_NAME: opti_transit
       DB_USER: dev_user
       DB_PASSWORD: dev_password
       GTFS_STATIC_URL: https://mkuran.pl/gtfs/warsaw.zip
@@ -40,7 +46,8 @@ services:
     container_name: opti-transit-dev-backend
     restart: always
     depends_on:
-      - backend-db
+      backend-db:
+        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: dev
       DB_HOST: backend-db

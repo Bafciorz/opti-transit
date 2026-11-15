@@ -13,4 +13,4 @@ COPY . .
 
 RUN mkdir -p /app/data/archive /app/downloads
 
-CMD ["python", "runner.py"]
+CMD ["sh", "-c", "python scripts/init_db.py && python runner.py"]
