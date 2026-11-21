@@ -32,6 +32,7 @@ services:
       DB_NAME: opti_transit_pipeline
       DB_USER: dev_user
       DB_PASSWORD: dev_password
+      API_KEY_WARSAW: ${API_KEY_WARSAW:-}
       GTFS_STATIC_URL: https://mkuran.pl/gtfs/warsaw.zip
       GTFS_REALTIME_VEHICLES_URL: https://mkuran.pl/gtfs/warsaw/vehicles.pb
       ARCHIVE_RETENTION_HOURS: "24"

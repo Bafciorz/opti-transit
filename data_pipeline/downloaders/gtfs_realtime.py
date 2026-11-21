@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import ssl
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,12 @@ if str(_DATA_PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(_DATA_PIPELINE_ROOT))
 
 import aiohttp
+try:
+    import certifi
+    SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    SSL_CONTEXT = ssl.create_default_context()
+
 from google.transit import gtfs_realtime_pb2
 from rich.console import Console
 
@@ -103,7 +110,7 @@ class GtfsRtProtobufDownloader:
         for attempt in range(1, max_retries + 1):
             try:
                 timeout = aiohttp.ClientTimeout(total=15.0)
-                async with session.get(self.url, headers=headers, timeout=timeout) as response:
+                async with session.get(self.url, headers=headers, timeout=timeout, ssl=SSL_CONTEXT) as response:
                     if response.status == 200:
                         raw_data = await response.read()
                         break
@@ -215,7 +222,7 @@ class _WarsawApiDownloader:
             payload = {"type": vtype}
             for attempt in range(1, max_retries + 1):
                 try:
-                    async with session.post(self.api_url, headers=headers, json=payload, timeout=timeout) as resp:
+                    async with session.post(self.api_url, headers=headers, json=payload, timeout=timeout, ssl=SSL_CONTEXT) as resp:
                         if resp.status == 200:
                             text = await resp.text()
                             if not text or not text.strip():

@@ -1,0 +1,92 @@
+name: opti-transit
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. PostgreSQL Database (GTFS Static & Realtime 24h positions)
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:17-alpine
+    container_name: opti_transit_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-opti_transit}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data_pipeline/sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-opti_transit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - opti_net
+
+  # ---------------------------------------------------------------------------
+  # 2. Data Pipeline Service (Python Collector, Static Sync, Parquet Archiver)
+  # ---------------------------------------------------------------------------
+  pipeline:
+    build:
+      context: ./data_pipeline
+      dockerfile: Dockerfile
+    container_name: opti_transit_pipeline
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: ./data_pipeline/.env
+        required: false
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-opti_transit}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      API_KEY_WARSAW: ${API_KEY_WARSAW:-}
+      COLLECTOR_INTERVAL_SECONDS: ${COLLECTOR_INTERVAL_SECONDS:-15}
+      ARCHIVE_RETENTION_HOURS: ${ARCHIVE_RETENTION_HOURS:-24}
+      PARQUET_OUTPUT_DIR: /app/data/archive
+    volumes:
+      - ./data_pipeline/data:/app/data
+      - ./data_pipeline/logs:/app/logs
+    command: ["runner", "--sync-on-startup"]
+    networks:
+      - opti_net
+
+  # ---------------------------------------------------------------------------
+  # 3. Backend Service (Spring Boot)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: opti_transit_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME:-opti_transit}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      ARCHIVE_DATA_PATH: /app/data/archive
+    volumes:
+      # Mount archived Parquet data in read-only mode (:ro)
+      - ./data_pipeline/data/archive:/app/data/archive:ro
+    networks:
+      - opti_net
+
+networks:
+  opti_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: opti_transit_postgres_data
+
