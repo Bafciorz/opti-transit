@@ -44,7 +44,7 @@ from rich.table import Table
 from archiver import DEFAULT_ARCHIVE_DIR, archive_old_positions
 from db import close_all_pools, get_async_connection, run_async
 from downloaders.gtfs_realtime import (
-    DEFAULT_REALTIME_URL,
+    DEFAULT_REALTIME_URL as _DEFAULT_REALTIME_URL,
     RealtimeVehicleDownloader,
 )
 from downloaders.gtfs_static import (
@@ -59,6 +59,11 @@ from writers.vehicle_positions import async_insert_vehicle_positions
 console = Console()
 
 # Default configuration from environment variables
+DEFAULT_REALTIME_URL = (
+    os.getenv("GTFS_REALTIME_VEHICLES_URL")
+    or os.getenv("REALTIME_VEHICLES_URL")
+    or _DEFAULT_REALTIME_URL
+)
 DEFAULT_COLLECTOR_INTERVAL = float(os.getenv("COLLECTOR_INTERVAL_SECONDS", "15"))
 DEFAULT_MONITOR_INTERVAL = float(os.getenv("MONITOR_INTERVAL_SECONDS", "300"))
 DEFAULT_STATIC_SYNC_HOUR = int(os.getenv("STATIC_SYNC_HOUR", "3"))  # 03:00 Warsaw time
@@ -115,7 +120,11 @@ class PipelineRunner:
 
     async def run(self) -> None:
         """Starts all pipeline loops concurrently."""
-        source_label = "dane.um.warszawa.pl [Official Warsaw API]"
+        source_label = (
+            f"mkuran.pl [GTFS-RT Protobuf]"
+            if ("mkuran.pl" in self.realtime_url or self.realtime_url.endswith(".pb"))
+            else "dane.um.warszawa.pl [Official Warsaw API]"
+        )
         console.print(
             Panel.fit(
                 "[bold cyan]Opti-Transit Data Pipeline — Unified Runner[/bold cyan]\n"
@@ -409,6 +418,11 @@ def main() -> None:
         help="Disable background Parquet archiver",
     )
     parser.add_argument(
+        "--realtime-url",
+        default=DEFAULT_REALTIME_URL,
+        help="Vehicle positions URL (Protobuf .pb or Warsaw API)",
+    )
+    parser.add_argument(
         "--run-once",
         action="store_true",
         help="Run a single collector cycle and exit (useful for testing/CI)",
@@ -436,6 +450,7 @@ def main() -> None:
         sync_on_startup=args.sync_on_startup,
         archive_on_startup=args.archive_on_startup,
         max_collector_iterations=max_iter,
+        realtime_url=args.realtime_url,
     )
 
     def handle_signal(*_: Any) -> None:

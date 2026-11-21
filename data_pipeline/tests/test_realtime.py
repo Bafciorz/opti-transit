@@ -259,3 +259,77 @@ async def test_warsaw_api_downloader_skips_invalid_items() -> None:
     feed_ts, positions = result
     assert len(positions) == 1
     assert positions[0]["vehicle_label"] == "1005"
+
+
+def test_extract_route_and_brigade() -> None:
+    """Verifies extraction of route and brigade from various Warsaw format strings."""
+    from downloaders.gtfs_realtime import extract_route_and_brigade
+
+    # entity_id with V/route/brigade
+    r, b = extract_route_and_brigade("V/178/M8", None, None)
+    assert r == "178"
+    assert b == "M8"
+
+    # trip_id with YYYY-MM-DD:route:code:brigade:time
+    r2, b2 = extract_route_and_brigade("other_id", None, "2026-11-21:507:SbS:3:1740")
+    assert r2 == "507"
+    assert b2 == "3"
+
+    # Explicit trip_route_id takes precedence for route
+    r3, b3 = extract_route_and_brigade("V/178/M8", "178_exp", None)
+    assert r3 == "178_exp"
+    assert b3 == "M8"
+
+
+@pytest.mark.asyncio
+async def test_protobuf_downloader_success() -> None:
+    """Verifies parsing of GTFS-Realtime Protocol Buffers feed."""
+    from google.transit import gtfs_realtime_pb2
+    from downloaders.gtfs_realtime import GtfsRtProtobufDownloader
+
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.header.gtfs_realtime_version = "2.0"
+    feed.header.timestamp = 1700000000
+
+    entity = feed.entity.add()
+    entity.id = "V/178/M8"
+    entity.vehicle.trip.trip_id = "2026-11-21:178:SbS:M8:1744"
+    entity.vehicle.vehicle.id = "V/178/M8"
+    entity.vehicle.vehicle.label = "4220"
+    entity.vehicle.position.latitude = 52.2011
+    entity.vehicle.position.longitude = 20.9360
+    entity.vehicle.position.bearing = 113.6
+    entity.vehicle.timestamp = 1700000000
+
+    raw_pb = feed.SerializeToString()
+
+    downloader = RealtimeVehicleDownloader(url="https://mkuran.pl/gtfs/warsaw/vehicles.pb")
+    assert downloader.provider == "gtfs_rt"
+
+    mock_session = MagicMock()
+
+    class MockGetContext:
+        async def __aenter__(self):
+            resp = MagicMock()
+            resp.status = 200
+            resp.read = AsyncMock(return_value=raw_pb)
+            return resp
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    mock_session.get.return_value = MockGetContext()
+
+    res = await downloader.fetch_and_parse(mock_session)
+    assert res is not None
+    ts, positions = res
+    assert ts == 1700000000
+    assert len(positions) == 1
+    pos = positions[0]
+    assert pos["vehicle_id"] == "V/178/4220"
+    assert pos["route_id"] == "178"
+    assert pos["brigade"] == "M8"
+    assert pos["vehicle_label"] == "4220"
+    assert pos["latitude"] == pytest.approx(52.2011, abs=1e-4)
+    assert pos["longitude"] == pytest.approx(20.9360, abs=1e-4)
+
