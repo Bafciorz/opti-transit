@@ -6,6 +6,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.ResponseEntity;
+import pl.zabawa.optitransit.models.dtos.DepartureDto;
 import pl.zabawa.optitransit.models.dtos.StopDto;
 import pl.zabawa.optitransit.services.StopService;
 
@@ -68,6 +69,40 @@ class StopControllerTest {
 
         // When
         ResponseEntity<StopDto> response = stopController.getStopById("non_existing");
+
+        // Then
+        assertEquals(404, response.getStatusCode().value());
+    }
+
+    @Test
+    void getDepartures_WhenFound_ShouldReturn200() {
+        // Given
+        DepartureDto departure = DepartureDto.builder()
+                .line("179")
+                .headsign("Os. Kabaty")
+                .departureTime("18:15:00")
+                .minutesToDeparture(10L)
+                .build();
+        when(stopService.getDepartures("700901", "18:05:00", 10)).thenReturn(Optional.of(List.of(departure)));
+
+        // When
+        ResponseEntity<List<DepartureDto>> response = stopController.getDepartures("700901", "18:05:00", 10);
+
+        // Then
+        assertEquals(200, response.getStatusCode().value());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+        assertEquals("179", response.getBody().get(0).getLine());
+        assertEquals("Os. Kabaty", response.getBody().get(0).getHeadsign());
+    }
+
+    @Test
+    void getDepartures_WhenStopNotFound_ShouldReturn404() {
+        // Given
+        when(stopService.getDepartures("invalid_stop", null, 10)).thenReturn(Optional.empty());
+
+        // When
+        ResponseEntity<List<DepartureDto>> response = stopController.getDepartures("invalid_stop", null, 10);
 
         // Then
         assertEquals(404, response.getStatusCode().value());

@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import pl.zabawa.optitransit.endpoints.StopEndpoint;
+import pl.zabawa.optitransit.models.dtos.DepartureDto;
 import pl.zabawa.optitransit.models.dtos.StopDto;
 import pl.zabawa.optitransit.services.StopService;
 
@@ -30,5 +31,12 @@ public class StopController implements StopEndpoint {
     @Override
     public ResponseEntity<List<StopDto>> getAllStops(int limit) {
         return ResponseEntity.ok(stopService.getAllStops(limit));
+    }
+
+    @Override
+    public ResponseEntity<List<DepartureDto>> getDepartures(String id, String time, int limit) {
+        return stopService.getDepartures(id, time, limit)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 }
