@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import pl.zabawa.optitransit.models.dtos.DepartureDto;
+import pl.zabawa.optitransit.models.dtos.NearbyStopDto;
 import pl.zabawa.optitransit.models.dtos.StopDto;
 import pl.zabawa.optitransit.models.entities.StopEntity;
 import pl.zabawa.optitransit.repositories.StopRepository;
@@ -47,6 +48,22 @@ public class StopService {
                 .toList();
     }
 
+    public List<NearbyStopDto> getNearbyStops(double lat, double lon, double radiusMeters, int limit) {
+        double sanitizedRadius = Math.clamp(radiusMeters, 50.0, 10000.0);
+        int sanitizedLimit = Math.clamp(limit, 1, 50);
+
+        List<StopRepository.NearbyStopProjection> nearbyStops = stopRepository.findNearbyStops(
+                lat,
+                lon,
+                sanitizedRadius,
+                sanitizedLimit
+        );
+
+        return nearbyStops.stream()
+                .map(this::mapToNearbyDto)
+                .toList();
+    }
+
     public Optional<List<DepartureDto>> getDepartures(String stopId, String time, int limit) {
         if (!stopRepository.existsById(stopId)) {
             return Optional.empty();
@@ -69,6 +86,20 @@ public class StopService {
                 .toList();
 
         return Optional.of(dtos);
+    }
+
+    private NearbyStopDto mapToNearbyDto(StopRepository.NearbyStopProjection projection) {
+        return NearbyStopDto.builder()
+                .id(projection.getId())
+                .name(projection.getName())
+                .code(projection.getCode())
+                .platformCode(projection.getPlatformCode())
+                .latitude(projection.getLatitude())
+                .longitude(projection.getLongitude())
+                .townName(projection.getTownName())
+                .wheelchairBoarding(projection.getWheelchairBoarding())
+                .distanceMeters(projection.getDistanceMeters())
+                .build();
     }
 
     private DepartureDto mapToDepartureDto(StopTimeRepository.DepartureProjection projection, String effectiveTime) {

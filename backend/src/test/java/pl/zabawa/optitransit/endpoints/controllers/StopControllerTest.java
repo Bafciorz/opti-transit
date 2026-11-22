@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.ResponseEntity;
 import pl.zabawa.optitransit.models.dtos.DepartureDto;
+import pl.zabawa.optitransit.models.dtos.NearbyStopDto;
 import pl.zabawa.optitransit.models.dtos.StopDto;
 import pl.zabawa.optitransit.services.StopService;
 
@@ -45,6 +46,30 @@ class StopControllerTest {
         assertNotNull(response.getBody());
         assertEquals(1, response.getBody().size());
         assertEquals("Centrum", response.getBody().get(0).getName());
+    }
+
+    @Test
+    void getNearbyStops_ShouldReturnStopsSortedByDistance() {
+        // Given
+        NearbyStopDto nearbyStop = NearbyStopDto.builder()
+                .id("700901")
+                .name("Centrum")
+                .latitude(52.2297)
+                .longitude(21.0122)
+                .distanceMeters(45.5)
+                .build();
+        when(stopService.getNearbyStops(52.23, 21.01, 500.0, 10))
+                .thenReturn(List.of(nearbyStop));
+
+        // When
+        ResponseEntity<List<NearbyStopDto>> response = stopController.getNearbyStops(52.23, 21.01, 500.0, 10);
+
+        // Then
+        assertEquals(200, response.getStatusCode().value());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+        assertEquals("Centrum", response.getBody().get(0).getName());
+        assertEquals(45.5, response.getBody().get(0).getDistanceMeters());
     }
 
     @Test

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import pl.zabawa.optitransit.models.dtos.DepartureDto;
+import pl.zabawa.optitransit.models.dtos.NearbyStopDto;
 import pl.zabawa.optitransit.models.dtos.StopDto;
 
 import java.util.List;
@@ -30,6 +31,25 @@ public interface StopEndpoint {
     ResponseEntity<List<StopDto>> searchStops(
             @Parameter(description = "Query string to search in stop names", example = "Centrum")
             @RequestParam String query,
+            @Parameter(description = "Maximum number of results to return", example = "10")
+            @RequestParam(defaultValue = "10") int limit
+    );
+
+    @Operation(
+            summary = "Find nearby transit stops by GPS coordinates",
+            description = "Returns a list of stops located within the specified radius around the given latitude and longitude, sorted by distance."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved nearby stops")
+    })
+    @GetMapping("/nearby")
+    ResponseEntity<List<NearbyStopDto>> getNearbyStops(
+            @Parameter(description = "User latitude", example = "52.2297")
+            @RequestParam double lat,
+            @Parameter(description = "User longitude", example = "21.0122")
+            @RequestParam double lon,
+            @Parameter(description = "Search radius in meters (default 1000m)", example = "500")
+            @RequestParam(defaultValue = "1000") double radiusMeters,
             @Parameter(description = "Maximum number of results to return", example = "10")
             @RequestParam(defaultValue = "10") int limit
     );
